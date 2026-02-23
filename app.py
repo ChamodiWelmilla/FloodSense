@@ -61,7 +61,80 @@ def get_saturation_adjusted_monthly(saturation_level):
     }
     return saturation_map.get(saturation_level, 256)
 
-st.set_page_config(page_title="Flood Risk", page_icon="🌊", layout="wide")
+def adjust_flood_risk(base_prob, history, rain_7d, river_dist, elevation, built_up, pop_density):
+    """
+    Apply logical adjustments to ensure flood risk increases with risk factors.
+    This corrects any counterintuitive model predictions.
+    """
+    adjusted_prob = base_prob
+
+    if history > 0:
+        if history <= 5:
+            history_boost = history * 0.015 
+        elif history <= 15:
+            history_boost = 0.075 + (history - 5) * 0.02  
+        else:
+            history_boost = 0.275 + (history - 15) * 0.01  
+            history_boost = min(history_boost, 0.45) 
+        adjusted_prob += history_boost
+    
+
+    if rain_7d > 200: 
+        rain_boost = min((rain_7d - 200) * 0.0005, 0.15)  
+        adjusted_prob += rain_boost
+    elif rain_7d > 100:  
+        rain_boost = (rain_7d - 100) * 0.0002  
+        adjusted_prob += rain_boost
+
+    if river_dist < 500:
+        proximity_boost = 0.10 - (river_dist / 500) * 0.05
+        adjusted_prob += proximity_boost
+    elif river_dist < 2000:
+        proximity_boost = 0.05 * (1 - (river_dist - 500) / 1500)
+        adjusted_prob += proximity_boost
+    
+    if elevation < 50: 
+        elevation_boost = 0.08 * (1 - elevation / 50)  
+        adjusted_prob += elevation_boost
+    elif elevation < 150:  
+        elevation_boost = 0.03 * (1 - (elevation - 50) / 100)  
+        adjusted_prob += elevation_boost
+    
+    if built_up > 60 and pop_density > 1000:
+        urban_boost = 0.05 
+        adjusted_prob += urban_boost
+    elif built_up > 40:
+        urban_boost = 0.025  
+        adjusted_prob += urban_boost
+    
+    extreme_factors = 0
+    if history > 10:
+        extreme_factors += 1
+    if rain_7d > 250:
+        extreme_factors += 1
+    if river_dist < 1000:
+        extreme_factors += 1
+    if elevation < 30:
+        extreme_factors += 1
+    
+    if extreme_factors >= 3:
+        adjusted_prob += 0.05  
+
+    max_increase = base_prob + 0.70
+    adjusted_prob = min(adjusted_prob, max_increase)
+    
+    adjusted_prob = max(0.0, min(0.95, adjusted_prob))
+   
+    if history > 15 and rain_7d > 300 and river_dist < 1000:
+        adjusted_prob = max(adjusted_prob, 0.60) 
+    elif history > 10 and rain_7d > 200:
+        adjusted_prob = max(adjusted_prob, 0.45)  
+    elif history > 5 and rain_7d > 150:
+        adjusted_prob = max(adjusted_prob, 0.32) 
+    
+    return adjusted_prob
+
+st.set_page_config(page_title="FloodSense", page_icon="🌊", layout="wide")
 st.title("🌊 FloodSense")
 
 with st.sidebar:
@@ -217,13 +290,23 @@ with col_res:
 
     input_df = pd.DataFrame([input_dict])[feature_columns]
     scaled_input = scaler.transform(input_df)
-    prob = model.predict_proba(scaled_input)[0][1]
-
-    risk_color = "🔴" if prob > 0.60 else "🟡" if prob > 0.30 else "🟢"
+    base_prob = model.predict_proba(scaled_input)[0][1]
+    
+    prob = adjust_flood_risk(
+        base_prob=base_prob,
+        history=history,
+        rain_7d=rain_7d,
+        river_dist=river_dist,
+        elevation=elevation,
+        built_up=built_up,
+        pop_density=pop_density
+    )
+    
+    risk_color = "🔴" if prob > 0.60 else "🟡" if prob > 0.40 else "🟢"
     st.metric(
         "Flood Risk Probability",
         f"{prob:.1%}",
-        help="ML model prediction based on all input factors"
+        help="ML model prediction with risk factor adjustments"
     )
 
     if prob > 0.60:
@@ -232,6 +315,60 @@ with col_res:
         st.warning("⚠️ **MODERATE RISK**")
     else:
         st.success("✅ **LOW RISK**")
+    
+    # Risk Factor Breakdown
+    with st.expander("📊 Risk Factor Analysis", expanded=False):
+        st.write("**Key Risk Contributors:**")
+        
+        if history > 15:
+            st.write(f"🔴 **Historical Floods:** {history} events - Extremely flood-prone area")
+        elif history > 10:
+            st.write(f"🟠 **Historical Floods:** {history} events - Very high frequency")
+        elif history > 5:
+            st.write(f"🟡 **Historical Floods:** {history} events - High frequency")
+        elif history > 0:
+            st.write(f"🟢 **Historical Floods:** {history} events - Moderate frequency")
+        else:
+            st.write("✅ **Historical Floods:** No recorded events")
+        
+        if rain_7d > 300:
+            st.write(f"🔴 **7-Day Rainfall:** {rain_7d}mm - Extreme precipitation")
+        elif rain_7d > 200:
+            st.write(f"🟠 **7-Day Rainfall:** {rain_7d}mm - Very heavy rainfall")
+        elif rain_7d > 100:
+            st.write(f"🟡 **7-Day Rainfall:** {rain_7d}mm - Heavy rainfall")
+        elif rain_7d > 50:
+            st.write(f"🟢 **7-Day Rainfall:** {rain_7d}mm - Moderate rainfall")
+        else:
+            st.write(f"✅ **7-Day Rainfall:** {rain_7d}mm - Light rainfall")
+        
+        if river_dist < 500:
+            st.write(f"🔴 **River Distance:** {river_dist}m - Very close, high flood risk")
+        elif river_dist < 2000:
+            st.write(f"🟡 **River Distance:** {river_dist}m - Close to river")
+        elif river_dist < 5000:
+            st.write(f"🟢 **River Distance:** {river_dist}m - Moderate distance")
+        else:
+            st.write(f"✅ **River Distance:** {river_dist}m - Safe distance")
+        
+        if elevation < 30:
+            st.write(f"🔴 **Elevation:** {elevation}m - Very low-lying area")
+        elif elevation < 50:
+            st.write(f"🟡 **Elevation:** {elevation}m - Low coastal area")
+        elif elevation < 150:
+            st.write(f"🟢 **Elevation:** {elevation}m - Plains")
+        else:
+            st.write(f"✅ **Elevation:** {elevation}m - Higher ground")
+        
+        if built_up > 60 and pop_density > 1000:
+            st.write(f"🟠 **Urban Density:** {built_up}% built-up, {pop_density}/km² - Dense urban area with drainage challenges")
+        elif built_up > 40:
+            st.write(f"🟡 **Urban Density:** {built_up}% built-up - Moderate urbanization")
+        else:
+            st.write(f"🟢 **Urban Density:** {built_up}% built-up - Low urbanization")
+        
+        st.write("---")
+        st.caption(f"Base Model Prediction: {base_prob:.1%} | Adjusted Risk: {prob:.1%}")
 
     st.write("---")
     st.caption(
