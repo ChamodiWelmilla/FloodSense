@@ -86,12 +86,8 @@ def adjust_flood_risk(base_prob, history, rain_7d, river_dist, elevation, built_
         rain_boost = (rain_7d - 100) * 0.0002  
         adjusted_prob += rain_boost
 
-    if river_dist < 500:
-        proximity_boost = 0.10 - (river_dist / 500) * 0.05
-        adjusted_prob += proximity_boost
-    elif river_dist < 2000:
-        proximity_boost = 0.05 * (1 - (river_dist - 500) / 1500)
-        adjusted_prob += proximity_boost
+    proximity_boost = 0.12 * np.exp(-river_dist / 1200)
+    adjusted_prob += proximity_boost
     
     if elevation < 50: 
         elevation_boost = 0.08 * (1 - elevation / 50)  
@@ -316,61 +312,6 @@ with col_res:
     else:
         st.success("✅ **LOW RISK**")
     
-    # Risk Factor Breakdown
-    with st.expander("📊 Risk Factor Analysis", expanded=False):
-        st.write("**Key Risk Contributors:**")
-        
-        if history > 15:
-            st.write(f"🔴 **Historical Floods:** {history} events - Extremely flood-prone area")
-        elif history > 10:
-            st.write(f"🟠 **Historical Floods:** {history} events - Very high frequency")
-        elif history > 5:
-            st.write(f"🟡 **Historical Floods:** {history} events - High frequency")
-        elif history > 0:
-            st.write(f"🟢 **Historical Floods:** {history} events - Moderate frequency")
-        else:
-            st.write("✅ **Historical Floods:** No recorded events")
-        
-        if rain_7d > 300:
-            st.write(f"🔴 **7-Day Rainfall:** {rain_7d}mm - Extreme precipitation")
-        elif rain_7d > 200:
-            st.write(f"🟠 **7-Day Rainfall:** {rain_7d}mm - Very heavy rainfall")
-        elif rain_7d > 100:
-            st.write(f"🟡 **7-Day Rainfall:** {rain_7d}mm - Heavy rainfall")
-        elif rain_7d > 50:
-            st.write(f"🟢 **7-Day Rainfall:** {rain_7d}mm - Moderate rainfall")
-        else:
-            st.write(f"✅ **7-Day Rainfall:** {rain_7d}mm - Light rainfall")
-        
-        if river_dist < 500:
-            st.write(f"🔴 **River Distance:** {river_dist}m - Very close, high flood risk")
-        elif river_dist < 2000:
-            st.write(f"🟡 **River Distance:** {river_dist}m - Close to river")
-        elif river_dist < 5000:
-            st.write(f"🟢 **River Distance:** {river_dist}m - Moderate distance")
-        else:
-            st.write(f"✅ **River Distance:** {river_dist}m - Safe distance")
-        
-        if elevation < 30:
-            st.write(f"🔴 **Elevation:** {elevation}m - Very low-lying area")
-        elif elevation < 50:
-            st.write(f"🟡 **Elevation:** {elevation}m - Low coastal area")
-        elif elevation < 150:
-            st.write(f"🟢 **Elevation:** {elevation}m - Plains")
-        else:
-            st.write(f"✅ **Elevation:** {elevation}m - Higher ground")
-        
-        if built_up > 60 and pop_density > 1000:
-            st.write(f"🟠 **Urban Density:** {built_up}% built-up, {pop_density}/km² - Dense urban area with drainage challenges")
-        elif built_up > 40:
-            st.write(f"🟡 **Urban Density:** {built_up}% built-up - Moderate urbanization")
-        else:
-            st.write(f"🟢 **Urban Density:** {built_up}% built-up - Low urbanization")
-        
-        st.write("---")
-        st.caption(f"Base Model Prediction: {base_prob:.1%} | Adjusted Risk: {prob:.1%}")
-
-    st.write("---")
     st.caption(
         "⚡For the best results, please ensure that all input fields are completed accurately."
     )
